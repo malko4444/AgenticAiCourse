@@ -52,13 +52,18 @@ async def create_upload_file_with_validation(
             "statue" : "error",
             "error" : str(e)
          }  
+class person(BaseModel):
+    name: str
+    age: int
+    email: str
+    
 class Item(BaseModel):
     name: str
     description: str = None
     price: float
     tax: float = None
 @app.post("/items/{item_id}")
-async def findItem(item_id: int, item: Item , q: str):
+async def findItem(item_id: int, item: Item , q: str, person: person):
     try:
         # Simulate some processing
         if item_id > 10:
@@ -86,10 +91,6 @@ app.mount("/file",StaticFiles(directory=UPLOAD_Folder), name="file")
 #             "error" : str(e)
 #          }
 # userApp = APIRouter()
-# class person(BaseModel):
-#     name: str
-#     age: int
-#     email: str
 
 # @userApp.get("/user/{user_id}/{name}")
 # def read_root(user_id, name:Optional[str] = None):
@@ -157,3 +158,4 @@ app.mount("/file",StaticFiles(directory=UPLOAD_Folder), name="file")
     
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+ 
