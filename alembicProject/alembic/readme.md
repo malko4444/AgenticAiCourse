@@ -9,3 +9,5 @@ for auto migration
 - python -m alembic revision --autogenerate -m "create change todos table"
 - this command save this which version is running on the db if we run this its updated the changes done i the model file and save it in the revision folder
 - python -m alembic upgrade head
+- 
+- 

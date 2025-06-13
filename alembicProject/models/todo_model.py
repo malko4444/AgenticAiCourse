@@ -1,10 +1,18 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-import datetime
 
 Base = declarative_base()
 
-class Todo(Base):
+class Users(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True)
+    password = Column(String, nullable=False)
+    todos = relationship("Todos", back_populates="user")
+
+class Todos(Base):
     __tablename__ = 'todos'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -12,3 +20,5 @@ class Todo(Base):
     description = Column(String, nullable=True)
     completed = Column(Boolean, default=False)
     status = Column(String, nullable=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)  # Changed to nullable=True
+    user = relationship("Users", back_populates="todos")
