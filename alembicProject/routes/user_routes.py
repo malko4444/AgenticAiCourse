@@ -5,7 +5,7 @@ from config.database import get_db
 from models.todo_model import Users
 from validations.validation import UserCreate,LoginUser
 
-from utils.utils_helper_function import create_access_token,hash_password,verify_password
+from utils.utils_helper_function import create_access_token,hash_password,verify_password, verify_api_key
 user_router = APIRouter()
 
 
@@ -24,7 +24,7 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db.refresh(db_user)
         # generate token 
         user_db = db.query(Users).filter(Users.email == user.email).first()
-       
+   
         access_token = create_access_token(data={"user_email": user_db.email, "user_id": user_db.id, "user_name": user_db.name})
         return {
             "message": "User created successfully",
@@ -34,11 +34,12 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         }
     except Exception as e:
         return {
+            "status": "error",
             "error": "Error creating user",
             "details": str(e)
         }
     
-@user_router.get("/login")
+@user_router.get("/login", dependencies=[Depends(verify_api_key)])
 def login(l_user:LoginUser, db: Session = Depends(get_db)):
     try:
         user = db.query(Users).filter(Users.email == l_user.email).first()

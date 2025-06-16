@@ -1,11 +1,11 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer,APIKeyHeader
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from typing import Optional
 from config.database import get_db
-from models.todo_model import User
+# from models.todo_model import User
 from jose import jwt, JWTError
 import os
 
@@ -13,45 +13,39 @@ from dotenv import load_dotenv
 
 load_dotenv()
 onAuthSchema = OAuth2PasswordBearer(tokenUrl="token")
+api_key_header = APIKeyHeader(name="api_key", auto_error=False)
 pwd_context= CryptContext(schemes=["bcrypt"], default="bcrypt")
-# def get_current_user(token: str, db: Session = Depends(get_db)):
-#     credentials_exception = HTTPException(
-#         status_code=status.HTTP_401_UNAUTHORIZED,
-#         detail="Could not validate credentials",
-#         headers={"WWW-Authenticate": "Bearer"},
-#     )
-#     try:
-#         payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
-#         username: str = payload.get("user_name")
-#         userid= payload.get("user_id")
-        
-#         if username is None:
-#             raise credentials_exception
-#         if userid is None:
-#             raise credentials_exception
-#     except JWTError:
-#         raise credentials_exception
-#     user = get_user(db, username)
-#     if user is None:
-#         raise credentials_exception
-#     return user
-# def get_user(db: Session, username: str):
-#     return db.query(User).filter(User.username == username).first()
 
-
+def verify_api_key(api_key: str = Depends(api_key_header)):
+    if api_key != os.getenv("API_KEY"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid API Key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return api_key
+    
 def verify_token(token:str = Depends(onAuthSchema)):
     try:
         # decode the token 
         payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=[os.getenv("ALGORITHM")])
-        username: str = payload.get("user_name")
-        userid = payload.get("user_id")
-        if username is None or userid is None:
+        user_from_token = {
+            "user_id": payload.get("user_id"),
+            "user_name": payload.get("user_name"),
+            "user_email":payload.get("user_email")
+        }
+        print("the token from the user ", user_from_token,payload)
+        if user_from_token is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return {"username": username, "userid": userid}
+        return {
+            "user_id": user_from_token.get("user_id"),
+            "user_name": user_from_token.get("user_name"),
+            "user_email": user_from_token.get("user_email")
+        }
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -3,20 +3,23 @@ from config.database import get_db
 from models.todo_model import Todos
 from validations.validation import TodoCreate
 from sqlalchemy.orm import Session
+from utils.utils_helper_function import verify_token
 
 todo_router = APIRouter()
 
 
-@todo_router.post("/create/{id}")
-def create_todo( id, todo: TodoCreate, db: Session = Depends(get_db)): 
+@todo_router.post("/create/")
+def create_todo(todo: TodoCreate, db: Session = Depends(get_db), user= Depends(verify_token)): 
     try:
-        db_todo = Todos(user_id=id,title=todo.title, description=todo.description, completed=todo.completed, status=todo.status)
+        print("the verifief token ",user)
+        db_todo = Todos(user_id=user["user_id"],title=todo.title, description=todo.description, completed=todo.completed, status=todo.status)
         db.add(db_todo)
         db.commit()
         db.refresh(db_todo)
         return {
             "message": "Todo created successfully",
             "data": db_todo,
+            "currentLoggedInUser":user,
             "status": "success"
         }
     except Exception as e:
