@@ -27,12 +27,13 @@ def fetch_weather(location: str) -> str:
     """
     # Simulate fetching weather data
     print(f"Fetching weather for {location}...")
-    return f"The current weather in {location}  is sunny with a temperature of 25°C."
+    return "25 degrees Celsius, clear sky"
+    
 agent = Agent(
     name="Assistant",
     instructions="You are a weather assistant..",
     model=OpenAIChatCompletionsModel(model="gemini-2.0-flash", openai_client=client),
-    # tools=[get_weather]
+    tools=[fetch_weather]
 )
 
 query = input("Enter the query: ")
