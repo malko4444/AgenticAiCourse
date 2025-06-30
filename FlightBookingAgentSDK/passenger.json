@@ -1,0 +1,20 @@
+[
+    {
+        "passenger_name": "zubair shehzad",
+        "confirmation_number": "13",
+        "seat_number": "corner one",
+        "flight_number": "FLT-341"
+    },
+    {
+        "passenger_name": "zubair shehzad",
+        "confirmation_number": "13",
+        "seat_number": "middle seat",
+        "flight_number": "FLT-341"
+    },
+    {
+        "passenger_name": "zubair shehzad",
+        "confirmation_number": "133",
+        "seat_number": "starting one",
+        "flight_number": "FLT-347"
+    }
+]
