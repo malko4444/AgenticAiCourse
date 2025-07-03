@@ -71,7 +71,10 @@ async def register(user: auth_register):
             raise HTTPException(status_code=400, detail="Email already registered")
         if not user.otp:
             raise HTTPException(status_code=400, detail="OTP is required for registration")
+        print("the user otp is ",user.otp,user.email)
+    
         otp_record = db.otp_codes.find_one({"email": user.email, "otp_code": user.otp})
+        print("the otp record is ",otp_record)
         if not otp_record:
             raise HTTPException(status_code=400, detail="Invalid or expired OTP")
         # Remove the OTP record after successful verification

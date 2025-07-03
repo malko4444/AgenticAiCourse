@@ -1,27 +1,25 @@
-import asyncio
 import os
-import random
 import uuid
+from dataclasses import dataclass
 from dotenv import load_dotenv
-from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request,Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 from config.dataBase import db
+from tools.flight_agent_tool import simple_flight_booking, user_all_flights,faq_lookup_tool,cancel_booking
+from fastapi.responses import JSONResponse
 from routes import auth_routes
+from utils.utils import verify_token
+from validation.validation import AirlineAgentContext
 
 from agents import (
     Agent,
-    HandoffOutputItem,
     ItemHelpers,
     MessageOutputItem,
-    RunContextWrapper,
     Runner,
-    ToolCallItem,
     ToolCallOutputItem,
     TResponseInputItem,
-    function_tool,
     handoff,
     trace,
     OpenAIChatCompletionsModel,
@@ -36,78 +34,6 @@ client = AsyncOpenAI(
     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
-### CONTEXT
-class AirlineAgentContext(BaseModel):
-    passenger_name: str | None = None
-    confirmation_number: str | None = None
-    seat_number: str | None = None
-    flight_number: str | None = None
-
-### TOOLS
-# change this tool to the simple flight booking tool and stored the data in the mongo db database
-
-
-@function_tool
-async def simple_flight_booking(
-    passenger_name: str,
-    seat_number: int ,
-    passport_number: int
-):
-    """ A simple flight booking tool that checks if a seat is available and books it.
-    :param passenger_name: Full name of the passenger
-    :param seat_number: Seat number to book (1-120) 
-    :param passport_number: Passport number of the passenger
-    :return: A message indicating success or failure of the booking
-    """
-    # seat number must be less than 120
-    if seat_number < 1 or seat_number > 120:
-        return {"error": "Invalid seat number. Must be between 1 and 120."}
-    # Check if a record with the same passport number already exists
-    existing_booking = db.bookings.find_one({"passport_number": passport_number})
-    existing_seat = db.bookings.find_one({"seat_number": seat_number})
-    if existing_seat:
-        existing_seat["_id"] = str(existing_seat["_id"])
-        return {
-            "error": f"Seat {seat_number} is already booked by {existing_seat['passenger_name']}."
-        }
-
-    if existing_booking:
-        # Convert ObjectId to string or remove it
-        existing_booking["_id"] = str(existing_booking["_id"])
-        return {
-            "message": f"Flight already booked for {existing_booking['passenger_name']} on {existing_booking['passport_number']}.",
-            # "booking_info": existing_booking
-        }
-
-    #qw If no existing booking, insert new booking
-    booking_info = {
-        "passenger_name": passenger_name,
-        # "airline_name": airline_name,
-        "seat_number": seat_number,
-        "passport_number": passport_number,
-    }
-
-    result = db.bookings.insert_one(booking_info)
-
-    # Add the ObjectId as a string to the response
-    booking_info["_id"] = str(result.inserted_id)
-
-    return {
-        "message": f"Flight booked successfully for {passenger_name}.",
-        "booking_info": booking_info
-    }
-
-@function_tool(name_override="faq_lookup_tool", description_override="Lookup frequently asked questions.")
-async def faq_lookup_tool(question: str) -> str:
-    if "bag" in question or "baggage" in question:
-        return "One bag allowed (max 50 lbs, 22x14x9 in)."
-    elif "seats" in question:
-        return "120 seats total: 22 business, 98 economy. Exit rows: 4, 16."
-    elif "wifi" in question:
-        return "Free WiFi available. Connect to Airline-Wifi."
-    return "Sorry, I don't know the answer to that question."
-
-### AGENTS
 
 faq_agent = Agent[AirlineAgentContext](
     name="FAQ Agent",
@@ -125,12 +51,20 @@ You are a flight booking agent for an airline.
 
 Your task is to help users book their flights by collecting the following details:
 - Full Name
-- Seat Number
+- location (departure and destination)
+- Date of Flight
+status (default is "booked") 
 - Passport Number
+- Login User ID 
 
 You will use the `simple_flight_booking` tool to confirm the booking.
 
-When the user provides their full name, seat number, and passport number.
+When the user provides their full name,passport number, and other booking details, you must extract the following information:
+1. Full Name: The complete name of the passenger.
+2. Passport Number: The passport number of the passenger.
+3. Location: The departure and destination locations for the flight.
+4. Date: The date of the flight.
+
 
 
 Always try to extract this information from the user’s input, even if it's in natural or unstructured language.
@@ -138,10 +72,14 @@ Always try to extract this information from the user’s input, even if it's in 
 Once you have all four required pieces of information, call the `simple_flight_booking` tool immediately to confirm the booking.
 
 If any information is missing, ask *only* for the missing details — do not repeat or ask again for already known values.
+and when you call the tool in the user input it also have login user id and the email so we can store the booking against a specific user and send the otp code to the user email
+and if user demand to see all the flights that are booked by him then use the `user_all_flights` tool to get all the flights that are booked by him and return it to the user.
+if user want to cancel the flight booking then use the `cancel_booking` tool to cancel the flight booking and return the message to the user.
+user input have _id , login_user_id and login_user_email so we can use it to cancel the booking and send the otp code to the user email.
 """
 ,
     model=OpenAIChatCompletionsModel(model="gemini-2.0-flash", openai_client=client),
-    tools=[simple_flight_booking],
+    tools=[simple_flight_booking,user_all_flights, cancel_booking],
 )
 triage_agent = Agent[AirlineAgentContext](
     name="Triage Agent",
@@ -184,10 +122,19 @@ input_items: list[TResponseInputItem] = []
 current_agent: Agent[AirlineAgentContext] = triage_agent
 
 @app.post("/chat")
-async def chat_with_agent(request: Request):
+async def chat_with_agent(request: Request,user_from_token=Depends(verify_token)):
     global input_items, current_agent
+    print(f"User ID: that are stored in the db {user_from_token.get('user_id')}")
+
+
 
     user_input = await request.body()
+    # embed user_from_token with the user input so the llm provide it to the agent
+    user_input = user_input + f"\nlogin_User_iD: {user_from_token.get('user_id')}".encode("utf-8")
+    user_input = user_input + f"\nuser_email: {user_from_token.get('user_email')}".encode("utf-8")
+    print(f"User input received after decode the token : {user_from_token.get('user_id')}")
+    conversation_context.login_user_id = user_from_token.get('user_id')
+    print(f"Conversation context updated with user ID: {conversation_context}")
     print(f"Received user input: {user_input}")
     user_input = user_input.decode("utf-8").strip()
 
@@ -215,6 +162,34 @@ async def chat_with_agent(request: Request):
     }
 
 
+@app.get("/user_flights")
+async def get_user_flights(user_from_token=Depends(verify_token)):
+    """
+    Get all flights booked by the user.
+    """
+    login_user_id = user_from_token.get('user_id')
+    if not login_user_id:
+        return JSONResponse(status_code=400, content={
+            "message": "User ID is required.",
+            "status": "error",
+            "data": None
+        })
+
+    # Find all bookings for the given user ID
+    bookings = db.bookings.find({"login_user_id": login_user_id})
+
+    user_flights = []
+    for booking in bookings:
+        booking["_id"] = str(booking["_id"])  # Convert ObjectId to string
+        user_flights.append(booking)
+
+    return {
+        "data": {
+            "user_flights": user_flights
+        },
+        "message": "User flights retrieved successfully",
+        "status": "success"
+    }
 app.include_router(auth_routes.auth_router, prefix="/auth", tags=["auth"])
 ### Uvicorn entry point
 if __name__ == "__main__":
